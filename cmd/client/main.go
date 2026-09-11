@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 func main() {
 	rawURL := flag.String("url", "ws://localhost:8080/connect", "WebSocket endpoint URL")
 	msg := flag.String("msg", "Hello from WebSocket CLI client!", "Message to send")
+	token := flag.String("token", "", "Google ID Token for Cloud Run authentication (Bearer token)")
 	repeat := flag.Int("repeat", 1, "Number of times to send message")
 	interval := flag.Duration("interval", 1*time.Second, "Interval between repeated messages")
 	flag.Parse()
@@ -24,13 +26,24 @@ func main() {
 		log.Fatalf("Invalid URL: %v", err)
 	}
 
+	headers := make(http.Header)
+	if *token != "" {
+		headers.Set("Authorization", "Bearer "+*token)
+	}
+
 	log.Printf("Connecting to %s...", u.String())
 
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), headers)
 	if err != nil {
+		if resp != nil {
+			log.Fatalf("Dial failed (HTTP status %d): %v", resp.StatusCode, err)
+		}
 		log.Fatalf("Dial failed: %v", err)
 	}
 	defer conn.Close()
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
 
 	log.Println("Connected! Listening for responses...")
 

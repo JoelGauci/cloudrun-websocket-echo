@@ -34,6 +34,8 @@ type EchoResponse struct {
 	Echo          string      `json:"echo"`
 	ReceivedAtUTC string      `json:"received_at_utc"`
 	FormattedTime string      `json:"formatted_time"`
+	Authenticated bool        `json:"authenticated"`
+	UserEmail     string      `json:"user_email,omitempty"`
 	PayloadJSON   interface{} `json:"payload_json,omitempty"`
 }
 
@@ -70,7 +72,15 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	clientAddr := r.RemoteAddr
-	log.Printf("Client connected from: %s", clientAddr)
+	callerEmail := r.Header.Get("X-Goog-Authenticated-User-Email")
+	hasAuth := r.Header.Get("Authorization") != "" || callerEmail != ""
+	if callerEmail != "" {
+		log.Printf("Client connected from: %s (caller: %s)", clientAddr, callerEmail)
+	} else if hasAuth {
+		log.Printf("Client connected from: %s (authenticated with Bearer token)", clientAddr)
+	} else {
+		log.Printf("Client connected from: %s", clientAddr)
+	}
 
 	// Set connection limits and timeouts
 	conn.SetReadLimit(maxMessageSize)
@@ -123,6 +133,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 			Echo:          rawMessage,
 			ReceivedAtUTC: now.Format(time.RFC3339),
 			FormattedTime: now.Format("Monday, 02-Jan-2006 15:04:05 MST"),
+			Authenticated: hasAuth,
+			UserEmail:     callerEmail,
 		}
 
 		// If the incoming message is valid JSON, parse it for convenience
