@@ -218,22 +218,125 @@ wscat -c "wss://<YOUR-CLOUD-RUN-URL>/connect" \
   -H "Authorization: Bearer $(gcloud auth print-identity-token)"
 ```
 
-### Option C: Using `curl` for the Health Check
+### Option C: Using Native `curl` (curl 7.86+ / 8.x) for WebSockets
+
+Modern versions of `curl` support WebSocket connections directly via the `ws://` and `wss://` schemes. You can stream a message through standard input (`stdin`) using the `-T -` option:
+
+#### 1. Send Plain Text Message:
+```bash
+printf "Hello Cloud Run from curl!" | curl -s -N --max-time 2 -T - \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "wss://<YOUR-CLOUD-RUN-URL>/connect"
+```
+
+**Example Response:**
+```json
+{
+  "echo": "Hello Cloud Run from curl!",
+  "received_at_utc": "2026-09-11T15:20:31Z",
+  "formatted_time": "Friday, 11-Sep-2026 15:20:31 UTC",
+  "authenticated": true
+}
+```
+
+#### 2. Send JSON Payload:
+```bash
+echo '{"event": "ping", "data": 42}' | curl -s -N --max-time 2 -T - \
+  -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "wss://<YOUR-CLOUD-RUN-URL>/connect"
+```
+
+**Example Response:**
+```json
+{
+  "echo": "{\"event\": \"ping\", \"data\": 42}\n",
+  "received_at_utc": "2026-09-11T15:20:39Z",
+  "formatted_time": "Friday, 11-Sep-2026 15:20:39 UTC",
+  "authenticated": true,
+  "payload_json": {
+    "data": 42,
+    "event": "ping"
+  }
+}
+```
+
+#### Explanation of `curl` Flags:
+- **`-s`** : Silent mode (hides download/upload progress meters).
+- **`-N`** : Disables buffering (no-buffer), printing the server response immediately.
+- **`-T -`** : Sends data read from standard input (`stdin`) as a WebSocket payload frame.
+- **`--max-time 2`** : Terminates `curl` after 2 seconds (because WebSocket connections remain open indefinitely by default).
+- **`-H "Authorization: Bearer ..."`** : Passes the Google OIDC ID token to satisfy Cloud Run's IAM requirement.
+- **`-k`** *(Optional)* : Bypasses TLS certificate verification if connecting through an untrusted or self-signed certificate (e.g. `nip.io`).
+
+---
+
+### Option D: Using `curl` for the HTTP Health Check
 
 ```bash
 curl -i -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
   https://<YOUR-CLOUD-RUN-URL>/healthz
 ```
 
-### Option D: Using the Web Browser Client via `gcloud run proxy`
+---
 
-Standard browser JavaScript (`new WebSocket(url)`) does not allow setting custom HTTP headers such as `Authorization: Bearer`. To test from a web browser against a secured Cloud Run service, use the built-in `gcloud` local proxy which automatically injects your Google credentials:
+### Option E: Using the Web Browser Client via `gcloud run proxy`
+
+Standard browser JavaScript (`new WebSocket(url)`) does not allow setting custom HTTP headers such as `Authorization: Bearer`. To test from a web browser directly against a secured Cloud Run service, use the built-in `gcloud` local proxy which automatically injects your Google credentials:
 
 ```bash
 gcloud run services proxy websocket-echo --region europe-west1 --port 8080
 ```
 
 Then open [http://localhost:8080](http://localhost:8080) in your browser. The browser connects through the local proxy which forwards the request to Cloud Run with valid authentication headers.
+
+---
+
+## Testing via an API Gateway or Reverse Proxy (e.g., Apigee, Envoy)
+
+When the service is published behind an API Gateway (such as **Apigee**) or an ingress reverse proxy (e.g. `https://34.54.8.132.nip.io/v1/wsecho`), the gateway typically terminates client TLS and handles the authentication handshake to Cloud Run:
+
+### 1. Endpoints Overview
+
+| Gateway Path | Target Route on Cloud Run | Description |
+|---|---|---|
+| `GET https://<GATEWAY_HOST>/v1/wsecho` | `GET /` | Serves the interactive browser test client. |
+| `GET wss://<GATEWAY_HOST>/v1/wsecho/connect` | `GET /connect` | WebSocket upgrade and bidirectional echo endpoint. |
+
+### 2. Test WebSocket with Native `curl`
+
+```bash
+# Plain text echo
+printf "Hello via Gateway!" | curl -k -s -N --max-time 2 -T - \
+  "wss://34.54.8.132.nip.io/v1/wsecho/connect"
+
+# JSON payload echo
+echo '{"status": "ok", "count": 1}' | curl -k -s -N --max-time 2 -T - \
+  "wss://34.54.8.132.nip.io/v1/wsecho/connect"
+```
+
+### 3. Test with the CLI Client
+
+```bash
+cd /usr/local/google/home/joelgauci/repo/cloudrun-websocket-echo
+
+go run ./cmd/client \
+  -url "wss://34.54.8.132.nip.io/v1/wsecho/connect" \
+  -msg "Hello from CLI client through Apigee!"
+```
+
+### 4. Test with `wscat`
+
+```bash
+wscat -c "wss://34.54.8.132.nip.io/v1/wsecho/connect" --no-check
+```
+
+### 5. Interactive Testing in Web Browser
+
+Open the gateway root URL directly in any web browser:
+```
+https://34.54.8.132.nip.io/v1/wsecho
+```
+Click **Connect**, enter your message in the input box, and click **Send**. The browser connects seamlessly to `wss://34.54.8.132.nip.io/v1/wsecho/connect` and displays echoes with timestamps in real-time.
 
 ---
 
