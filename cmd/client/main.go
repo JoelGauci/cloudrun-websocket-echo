@@ -34,7 +34,7 @@ func main() {
 	repeat := flag.Int("repeat", 1, "Number of times to send the initial message")
 	interval := flag.Duration("interval", 1*time.Second, "Interval between repeated messages")
 	closeAfter := flag.Bool("close", false, "Close connection immediately after sending initial message(s)")
-	insecure := flag.Bool("insecure", false, "Skip TLS certificate verification (e.g. for self-signed certs like nip.io)")
+	insecure := flag.Bool("insecure", false, "Skip TLS certificate verification (e.g. for self-signed certificates)")
 
 	var customHeaders headerList
 	flag.Var(&customHeaders, "H", "Custom HTTP header in 'Name: Value' format (can be specified multiple times)")

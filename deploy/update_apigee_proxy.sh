@@ -8,7 +8,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:?ERROR: Please export PROJECT_ID (e.g. export PROJECT_ID=your-project-id)}"
 SERVICE_ACCOUNT="${SERVICE_ACCOUNT:?ERROR: Please export SERVICE_ACCOUNT (e.g. export SERVICE_ACCOUNT=my-sa@your-project-id.iam.gserviceaccount.com)}"
-CLOUD_RUN_URL="${CLOUD_RUN_URL:?ERROR: Please export CLOUD_RUN_URL (e.g. export CLOUD_RUN_URL=https://websocket-echo-xxx.a.run.app)}"
+CLOUD_RUN_URL="${CLOUD_RUN_URL:?ERROR: Please export CLOUD_RUN_URL (e.g. export CLOUD_RUN_URL=https://your-cloud-run-service-url)}"
 PROXY_NAME="${PROXY_NAME:-ws-echo}"
 ENV_NAME="${ENV_NAME:-prod}"
 ENDPOINT_ATTACHMENT_ID="${ENDPOINT_ATTACHMENT_ID:-websocket-echo-ea}"

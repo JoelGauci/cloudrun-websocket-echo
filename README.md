@@ -265,7 +265,7 @@ echo '{"event": "ping", "data": 42}' | curl -s -N --max-time 2 -T - \
 - **`-T -`** : Sends data read from standard input (`stdin`) as a WebSocket payload frame.
 - **`--max-time 2`** : Terminates `curl` after 2 seconds (because WebSocket connections remain open indefinitely by default).
 - **`-H "Authorization: Bearer ..."`** : Passes the Google OIDC ID token to satisfy Cloud Run's IAM requirement.
-- **`-k`** *(Optional)* : Bypasses TLS certificate verification if connecting through an untrusted or self-signed certificate (e.g. `nip.io`).
+- **`-k`** *(Optional)* : Bypasses TLS certificate verification if connecting through an untrusted or self-signed certificate.
 
 ---
 
@@ -324,11 +324,11 @@ export REGION="europe-west1"
 export VPC_NETWORK="your-vpc-network"
 export SUBNET="your-private-subnet"
 
-# External hostname or IP of your Apigee X Environment Group / Load Balancer (e.g. api.example.com or <IP>.nip.io)
+# External hostname or IP of your Apigee X Environment Group / Load Balancer (e.g. api.example.com)
 export APIGEE_HOST="your-apigee-hostname.example.com"
 
 # Target Cloud Run service URL (used for Host header and Google OIDC token audience)
-export CLOUD_RUN_URL="https://websocket-echo-xxxx.europe-west1.run.app"
+export CLOUD_RUN_URL="https://your-cloud-run-service-url"
 
 # Google Cloud Service Account used by Apigee to authenticate to Cloud Run (must have roles/run.invoker)
 export SERVICE_ACCOUNT="apigee-runtime-sa@${PROJECT_ID}.iam.gserviceaccount.com"

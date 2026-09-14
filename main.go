@@ -259,21 +259,66 @@ const indexHTML = `<!DOCTYPE html>
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       margin: 0;
       padding: 24px;
-      background: #f8fafc;
-      color: #0f172a;
+      background: var(--bg-page, #f8fafc);
+      color: var(--text-main, #0f172a);
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    :root {
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --border-card: transparent;
+      --text-main: #0f172a;
+      --text-heading: #1e293b;
+      --text-muted: #475569;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-text: #0f172a;
+      --btn-sec-bg: #e2e8f0;
+      --btn-sec-text: #334155;
+      --btn-sec-hover: #cbd5e1;
+      --code-bg: #f1f5f9;
+      --code-text: #0f172a;
+      --log-bg: #0f172a;
+      --log-border: transparent;
+    }
+    body.dark-mode {
+      --bg-page: #0b0f19;
+      --bg-card: #1e293b;
+      --border-card: #334155;
+      --text-main: #f1f5f9;
+      --text-heading: #f8fafc;
+      --text-muted: #94a3b8;
+      --input-bg: #0f172a;
+      --input-border: #475569;
+      --input-text: #f8fafc;
+      --btn-sec-bg: #334155;
+      --btn-sec-text: #e2e8f0;
+      --btn-sec-hover: #475569;
+      --code-bg: #0f172a;
+      --code-text: #38bdf8;
+      --log-bg: #020617;
+      --log-border: #334155;
     }
     .container {
       max-width: 800px;
       margin: 0 auto;
-      background: #ffffff;
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
       padding: 28px;
       border-radius: 12px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
     }
     h1 {
-      margin-top: 0;
+      margin: 0;
       font-size: 1.5rem;
-      color: #1e293b;
+      color: var(--text-heading);
     }
     .badge {
       display: inline-block;
@@ -285,17 +330,36 @@ const indexHTML = `<!DOCTYPE html>
     .disconnected { background: #fee2e2; color: #991b1b; }
     .connected { background: #dcfce7; color: #166534; }
     .connecting { background: #fef3c7; color: #92400e; }
+    body.dark-mode .disconnected { background: #7f1d1d; color: #fecaca; }
+    body.dark-mode .connected { background: #14532d; color: #bbf7d0; }
+    body.dark-mode .connecting { background: #78350f; color: #fde68a; }
     .controls {
       display: flex;
       gap: 8px;
       margin: 20px 0;
     }
+    label.path-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    code#targetUrlPreview {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+    }
     input[type="text"] {
       flex-grow: 1;
       padding: 10px 14px;
-      border: 1px solid #cbd5e1;
+      background: var(--input-bg);
+      color: var(--input-text);
+      border: 1px solid var(--input-border);
       border-radius: 8px;
       font-size: 1rem;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
     }
     button {
       padding: 10px 18px;
@@ -309,16 +373,17 @@ const indexHTML = `<!DOCTYPE html>
       transition: background 0.15s ease;
     }
     button:hover:not(:disabled) { background: #1d4ed8; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    button:disabled { background: #64748b; cursor: not-allowed; opacity: 0.7; }
     button.btn-secondary {
-      background: #e2e8f0;
-      color: #334155;
+      background: var(--btn-sec-bg);
+      color: var(--btn-sec-text);
     }
-    button.btn-secondary:hover:not(:disabled) { background: #cbd5e1; }
+    button.btn-secondary:hover:not(:disabled) { background: var(--btn-sec-hover); }
     #log {
       height: 340px;
       overflow-y: auto;
-      background: #0f172a;
+      background: var(--log-bg);
+      border: 1px solid var(--log-border);
       color: #e2e8f0;
       padding: 16px;
       border-radius: 8px;
@@ -333,11 +398,14 @@ const indexHTML = `<!DOCTYPE html>
 </head>
 <body>
   <div class="container">
-    <h1>Cloud Run WebSocket Echo Tester</h1>
+    <div class="header-bar">
+      <h1>Cloud Run WebSocket Echo Tester</h1>
+      <button id="btnTheme" class="btn-secondary" onclick="toggleTheme()" title="Toggle Dark/Light Mode">🌙 Dark Mode</button>
+    </div>
     <p>Target URL: <code id="targetUrlPreview">...</code> &bull; Status: <span id="status" class="badge disconnected">Disconnected</span></p>
 
     <div class="controls" style="align-items: center;">
-      <label for="wsPathInput" style="font-size: 0.875rem; font-weight: 600; color: #475569; white-space: nowrap;">Path after base:</label>
+      <label for="wsPathInput" class="path-label">Path after base:</label>
       <input type="text" id="wsPathInput" value="/connect" placeholder="/connect" oninput="updateUrlPreview()" />
       <button id="btnConnect" onclick="toggleConnect()">Connect</button>
       <button class="btn-secondary" onclick="clearLog()">Clear Log</button>
@@ -360,6 +428,32 @@ const indexHTML = `<!DOCTYPE html>
     const messageInput = document.getElementById('messageInput');
     const wsPathInput = document.getElementById('wsPathInput');
     const targetUrlPreview = document.getElementById('targetUrlPreview');
+    const btnTheme = document.getElementById('btnTheme');
+
+    function applyTheme(dark) {
+      if (dark) {
+        document.body.classList.add('dark-mode');
+        btnTheme.textContent = '☀️ Light Mode';
+      } else {
+        document.body.classList.remove('dark-mode');
+        btnTheme.textContent = '🌙 Dark Mode';
+      }
+    }
+
+    function toggleTheme() {
+      const isDark = !document.body.classList.contains('dark-mode');
+      localStorage.setItem('ws_tester_theme', isDark ? 'dark' : 'light');
+      applyTheme(isDark);
+    }
+
+    (function initTheme() {
+      const saved = localStorage.getItem('ws_tester_theme');
+      if (saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        applyTheme(true);
+      } else {
+        applyTheme(false);
+      }
+    })();
 
     function computeWsUrl() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
