@@ -19,3 +19,7 @@ bin/
 
 # Go workspace file
 go.work
+
+# article related assets
+ARTICLE.md
+assets
