@@ -112,6 +112,12 @@ go run ./cmd/client -msg "Hello from my terminal!"
 
 # Send repeated messages at a 1-second interval
 go run ./cmd/client -msg "Ping" -repeat 5 -interval 1s
+
+# Pass custom HTTP headers (-H can be repeated multiple times)
+go run ./cmd/client \
+  -H "X-Custom-Header-1: Value1" \
+  -H "X-Custom-Header-2: Value2" \
+  -msg "Hello with custom headers!"
 ```
 
 ### 4. Run Automated Tests
@@ -291,9 +297,64 @@ Then open [http://localhost:8080](http://localhost:8080) in your browser. The br
 
 ---
 
+## Private Southbound Architecture: Apigee → PSC → Regional ILB → Serverless NEG → Cloud Run
+
+To isolate the Cloud Run service from the public internet (`--ingress=internal-and-cloud-load-balancing`) while exposing WebSockets through **Apigee X**, this project provisions a **Regional Internal Application Load Balancer (`INTERNAL_MANAGED`)** with a **Serverless NEG** and a **Private Service Connect (PSC) Service Attachment**:
+
+```
+[Client]
+   │ wss://34.54.8.132.nip.io/v1/wsecho/connect
+   ▼
+[Apigee X Runtime (europe-west1)]
+   │ Southbound PSC Endpoint Attachment (websocket-echo-ea -> 7.48.212.2)
+   ▼
+[PSC Service Attachment (websocket-echo-service-attachment)]
+   │ NAT Subnet: psc-nat-subnet-ws-echo (192.168.2.0/24)
+   ▼
+[Regional Internal HTTPS Load Balancer (10.0.0.3:443, INTERNAL_MANAGED)]
+   │ Proxy Subnet: proxy-only-subnet-ew1 (10.129.0.0/23)
+   │ Backend Service: websocket-echo-ilb-backend (HTTPS, inherits Cloud Run 3600s WebSocket timeout)
+   ▼
+[Serverless NEG (websocket-echo-neg)]
+   ▼
+[Cloud Run Service (websocket-echo, --ingress=internal-and-cloud-load-balancing)]
+```
+
+### Deployed Resources (`europe-west1`)
+
+| Component | Resource Name | Details |
+|---|---|---|
+| **Cloud Run Service** | `websocket-echo` | `--ingress=internal-and-cloud-load-balancing`, `--timeout=3600`, `--session-affinity` |
+| **Serverless NEG** | `websocket-echo-neg` | `SERVERLESS` endpoint type targeting `websocket-echo` |
+| **Regional Backend Service** | `websocket-echo-ilb-backend` | `INTERNAL_MANAGED`, `HTTPS` protocol (inherits Cloud Run's 3600s WebSocket timeout) |
+| **Regional URL Map** | `websocket-echo-ilb-urlmap` | Default backend: `websocket-echo-ilb-backend` |
+| **Regional SSL Certificate** | `websocket-echo-ilb-cert` | Self-signed certificate for internal HTTPS (`websocket-echo.internal`) |
+| **Regional Target HTTPS Proxy** | `websocket-echo-ilb-https-proxy` | Terminates internal TLS on the ILB |
+| **Regional Forwarding Rule** | `websocket-echo-ilb-forwarding-rule` | VIP `10.0.0.3:443` in `sub-customer-apigee-x` |
+| **PSC Service Attachment** | `websocket-echo-service-attachment` | Producer attachment (`ACCEPT_AUTOMATIC`) with NAT subnet `psc-nat-subnet-ws-echo` (`192.168.2.0/24`) |
+| **Apigee Endpoint Attachment** | `websocket-echo-ea` | Consumer attachment in `europe-west1` assigned private IP **`7.48.212.2`** |
+| **Apigee Proxy Target** | `ws-echo` (Revision 3) | Targets `https://7.48.212.2` with `<GoogleIDToken>` authentication (`crun-apigee@apigee-x-jog.iam.gserviceaccount.com`) |
+
+### Automated Deployment Scripts & Terraform
+
+All infrastructure and Apigee proxy configurations are automated in the `deploy/` directory:
+
+- **Bash / gcloud Script (ILB + NEG + PSC + Endpoint Attachment)**:
+  ```bash
+  ./deploy/setup_ilb_psc_apigee.sh
+  ```
+- **Bash Script (Update Apigee Proxy `ws-echo` target to PSC Endpoint Attachment IP)**:
+  ```bash
+  ./deploy/update_apigee_proxy.sh
+  ```
+- **Terraform Configuration**:
+  See [`deploy/terraform/main.tf`](deploy/terraform/main.tf) for declarative IaC provisioning.
+
+---
+
 ## Testing via an API Gateway or Reverse Proxy (e.g., Apigee, Envoy)
 
-When the service is published behind an API Gateway (such as **Apigee**) or an ingress reverse proxy (e.g. `https://34.54.8.132.nip.io/v1/wsecho`), the gateway typically terminates client TLS and handles the authentication handshake to Cloud Run:
+When the service is published behind an API Gateway (such as **Apigee**) or an ingress reverse proxy (e.g. `https://34.54.8.132.nip.io/v1/wsecho`), the gateway terminates client TLS and routes privately over PSC to the Internal Load Balancer and Cloud Run:
 
 ### 1. Endpoints Overview
 
@@ -319,9 +380,19 @@ echo '{"status": "ok", "count": 1}' | curl -k -s -N --max-time 2 -T - \
 ```bash
 cd /usr/local/google/home/joelgauci/repo/cloudrun-websocket-echo
 
+# Standard connection through Apigee
 go run ./cmd/client \
   -url "wss://34.54.8.132.nip.io/v1/wsecho/connect" \
+  -insecure \
   -msg "Hello from CLI client through Apigee!"
+
+# Passing custom headers (-H) through Apigee (e.g. X-Custom-Header or x-blocker)
+go run ./cmd/client \
+  -url "wss://34.54.8.132.nip.io/v1/wsecho/connect" \
+  -insecure \
+  -H "header_name1: header_value1" \
+  -H "header_name2: header_value2" \
+  -msg "Hello with custom headers!"
 ```
 
 ### 4. Test with `wscat`

@@ -143,3 +143,37 @@ func TestWebSocketJSONPayload(t *testing.T) {
 		t.Fatalf("expected payload_json to be parsed, got nil")
 	}
 }
+
+// TestWebSocketMultipleMessages verifies that the connection remains open across multiple sequential calls.
+func TestWebSocketMultipleMessages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(handleConnect))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/connect"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	for i := 1; i <= 5; i++ {
+		msg := strings.Repeat("ping-", i)
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+			t.Fatalf("failed to write message #%d: %v", i, err)
+		}
+
+		_, respBytes, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("failed to read response #%d: %v", i, err)
+		}
+
+		var echoRes EchoResponse
+		if err := json.Unmarshal(respBytes, &echoRes); err != nil {
+			t.Fatalf("failed to unmarshal response #%d: %v", i, err)
+		}
+		if echoRes.Echo != msg {
+			t.Errorf("message #%d: expected echo %q, got %q", i, msg, echoRes.Echo)
+		}
+	}
+}
+

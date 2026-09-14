@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -71,6 +72,14 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	var writeMu sync.Mutex
+	writeMessageSafe := func(messageType int, data []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+		return conn.WriteMessage(messageType, data)
+	}
+
 	clientAddr := r.RemoteAddr
 	callerEmail := r.Header.Get("X-Goog-Authenticated-User-Email")
 	hasAuth := r.Header.Get("Authorization") != "" || callerEmail != ""
@@ -102,8 +111,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-ticker.C:
-				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
 					return
 				}
 			case <-done:
@@ -150,9 +158,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Send JSON response back to the client
-		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
-		if err := conn.WriteMessage(messageType, responseBytes); err != nil {
+		// Send JSON response back to the client safely
+		if err := writeMessageSafe(messageType, responseBytes); err != nil {
 			log.Printf("Error writing message to %s: %v", clientAddr, err)
 			break
 		}
@@ -366,7 +373,8 @@ const indexHTML = `<!DOCTYPE html>
       }
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = protocol + '//' + window.location.host + '/connect';
+      const basePath = window.location.pathname.replace(/\/$/, '');
+      const wsUrl = protocol + '//' + window.location.host + basePath + '/connect';
 
       statusBadge.textContent = 'Connecting...';
       statusBadge.className = 'badge connecting';
