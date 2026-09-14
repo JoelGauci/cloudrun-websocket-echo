@@ -177,3 +177,37 @@ func TestWebSocketMultipleMessages(t *testing.T) {
 	}
 }
 
+// TestWebSocketCustomPath verifies that WebSocket upgrades work on any custom path after the base path.
+func TestWebSocketCustomPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(handleIndex))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/custom/subpath"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial WebSocket on custom path: %v", err)
+	}
+	defer conn.Close()
+
+	msg := "hello custom path"
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+		t.Fatalf("failed to write message: %v", err)
+	}
+
+	_, respBytes, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+
+	var echoRes EchoResponse
+	if err := json.Unmarshal(respBytes, &echoRes); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if echoRes.Echo != msg {
+		t.Errorf("expected echo %q, got %q", msg, echoRes.Echo)
+	}
+	if echoRes.Path != "/custom/subpath" {
+		t.Errorf("expected path %q, got %q", "/custom/subpath", echoRes.Path)
+	}
+}
+

@@ -14,7 +14,6 @@ terraform {
 
 variable "project_id" {
   type        = string
-  default     = "apigee-x-jog"
   description = "Google Cloud Project ID"
 }
 
@@ -26,13 +25,11 @@ variable "region" {
 
 variable "vpc_network" {
   type        = string
-  default     = "vpc-customer-apigee-x"
   description = "VPC Network name"
 }
 
 variable "subnet_name" {
   type        = string
-  default     = "sub-customer-apigee-x"
   description = "Primary private subnet name"
 }
 

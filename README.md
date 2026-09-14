@@ -217,14 +217,7 @@ go run ./cmd/client \
   -msg "Hello from Service Account!"
 ```
 
-### Option B: Using `wscat`
-
-```bash
-wscat -c "wss://<YOUR-CLOUD-RUN-URL>/connect" \
-  -H "Authorization: Bearer $(gcloud auth print-identity-token)"
-```
-
-### Option C: Using Native `curl` (curl 7.86+ / 8.x) for WebSockets
+### Option B: Using Native `curl` (curl 7.86+ / 8.x) for WebSockets
 
 Modern versions of `curl` support WebSocket connections directly via the `ws://` and `wss://` schemes. You can stream a message through standard input (`stdin`) using the `-T -` option:
 
@@ -276,7 +269,7 @@ echo '{"event": "ping", "data": 42}' | curl -s -N --max-time 2 -T - \
 
 ---
 
-### Option D: Using `curl` for the HTTP Health Check
+### Option C: Using `curl` for the HTTP Health Check
 
 ```bash
 curl -i -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
@@ -285,7 +278,7 @@ curl -i -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
 
 ---
 
-### Option E: Using the Web Browser Client via `gcloud run proxy`
+### Option D: Using the Web Browser Client via `gcloud run proxy`
 
 Standard browser JavaScript (`new WebSocket(url)`) does not allow setting custom HTTP headers such as `Authorization: Bearer`. To test from a web browser directly against a secured Cloud Run service, use the built-in `gcloud` local proxy which automatically injects your Google credentials:
 
@@ -303,21 +296,42 @@ To isolate the Cloud Run service from the public internet (`--ingress=internal-a
 
 ```
 [Client]
-   │ wss://34.54.8.132.nip.io/v1/wsecho/connect
+   │ wss://${APIGEE_HOST}/v1/wsecho/connect
    ▼
 [Apigee X Runtime (europe-west1)]
-   │ Southbound PSC Endpoint Attachment (websocket-echo-ea -> 7.48.212.2)
+   │ Southbound PSC Endpoint Attachment (websocket-echo-ea -> ${ENDPOINT_ATTACHMENT_HOST})
+   │ Request Timeout: io.timeout.millis = 3600000 (3600s)
    ▼
 [PSC Service Attachment (websocket-echo-service-attachment)]
-   │ NAT Subnet: psc-nat-subnet-ws-echo (192.168.2.0/24)
+   │ NAT Subnet: psc-nat-subnet-ws-echo
    ▼
-[Regional Internal HTTPS Load Balancer (10.0.0.3:443, INTERNAL_MANAGED)]
-   │ Proxy Subnet: proxy-only-subnet-ew1 (10.129.0.0/23)
+[Regional Internal HTTPS Load Balancer (INTERNAL_MANAGED, Port 443)]
+   │ Proxy Subnet: proxy-only-subnet-ew1
    │ Backend Service: websocket-echo-ilb-backend (HTTPS, inherits Cloud Run 3600s WebSocket timeout)
    ▼
 [Serverless NEG (websocket-echo-neg)]
    ▼
 [Cloud Run Service (websocket-echo, --ingress=internal-and-cloud-load-balancing)]
+```
+
+### Required Environment Variables
+
+Before deploying or testing via the scripts, define your environment variables:
+
+```bash
+export PROJECT_ID="your-gcp-project-id"
+export REGION="europe-west1"
+export VPC_NETWORK="your-vpc-network"
+export SUBNET="your-private-subnet"
+
+# External hostname or IP of your Apigee X Environment Group / Load Balancer (e.g. api.example.com or <IP>.nip.io)
+export APIGEE_HOST="your-apigee-hostname.example.com"
+
+# Target Cloud Run service URL (used for Host header and Google OIDC token audience)
+export CLOUD_RUN_URL="https://websocket-echo-xxxx.europe-west1.run.app"
+
+# Google Cloud Service Account used by Apigee to authenticate to Cloud Run (must have roles/run.invoker)
+export SERVICE_ACCOUNT="apigee-runtime-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 ```
 
 ### Deployed Resources (`europe-west1`)
@@ -330,10 +344,10 @@ To isolate the Cloud Run service from the public internet (`--ingress=internal-a
 | **Regional URL Map** | `websocket-echo-ilb-urlmap` | Default backend: `websocket-echo-ilb-backend` |
 | **Regional SSL Certificate** | `websocket-echo-ilb-cert` | Self-signed certificate for internal HTTPS (`websocket-echo.internal`) |
 | **Regional Target HTTPS Proxy** | `websocket-echo-ilb-https-proxy` | Terminates internal TLS on the ILB |
-| **Regional Forwarding Rule** | `websocket-echo-ilb-forwarding-rule` | VIP `10.0.0.3:443` in `sub-customer-apigee-x` |
-| **PSC Service Attachment** | `websocket-echo-service-attachment` | Producer attachment (`ACCEPT_AUTOMATIC`) with NAT subnet `psc-nat-subnet-ws-echo` (`192.168.2.0/24`) |
-| **Apigee Endpoint Attachment** | `websocket-echo-ea` | Consumer attachment in `europe-west1` assigned private IP **`7.48.212.2`** |
-| **Apigee Proxy Target** | `ws-echo` (Revision 3) | Targets `https://7.48.212.2` with `<GoogleIDToken>` authentication (`crun-apigee@apigee-x-jog.iam.gserviceaccount.com`) |
+| **Regional Forwarding Rule** | `websocket-echo-ilb-forwarding-rule` | Internal VIP (`:443`) in `${SUBNET}` |
+| **PSC Service Attachment** | `websocket-echo-service-attachment` | Producer attachment (`ACCEPT_AUTOMATIC`) with NAT subnet `psc-nat-subnet-ws-echo` |
+| **Apigee Endpoint Attachment** | `websocket-echo-ea` | Consumer attachment in `${REGION}` assigned a private PSC host IP (`${ENDPOINT_ATTACHMENT_HOST}`) |
+| **Apigee Proxy Target** | `ws-echo` | Targets `https://${ENDPOINT_ATTACHMENT_HOST}` with `io.timeout.millis=3600000` (3600s) and `<GoogleIDToken>` authentication (`${SERVICE_ACCOUNT}`) |
 
 ### Automated Deployment Scripts & Terraform
 
@@ -343,7 +357,7 @@ All infrastructure and Apigee proxy configurations are automated in the `deploy/
   ```bash
   ./deploy/setup_ilb_psc_apigee.sh
   ```
-- **Bash Script (Update Apigee Proxy `ws-echo` target to PSC Endpoint Attachment IP)**:
+- **Bash Script (Update Apigee Proxy `ws-echo` target to PSC Endpoint Attachment IP with 3600s timeout)**:
   ```bash
   ./deploy/update_apigee_proxy.sh
   ```
@@ -354,60 +368,55 @@ All infrastructure and Apigee proxy configurations are automated in the `deploy/
 
 ## Testing via an API Gateway or Reverse Proxy (e.g., Apigee, Envoy)
 
-When the service is published behind an API Gateway (such as **Apigee**) or an ingress reverse proxy (e.g. `https://34.54.8.132.nip.io/v1/wsecho`), the gateway terminates client TLS and routes privately over PSC to the Internal Load Balancer and Cloud Run:
+When the service is published behind an API Gateway (such as **Apigee**) at `https://${APIGEE_HOST}/v1/wsecho`, the gateway terminates client TLS and routes privately over PSC to the Internal Load Balancer and Cloud Run:
 
 ### 1. Endpoints Overview
 
 | Gateway Path | Target Route on Cloud Run | Description |
 |---|---|---|
-| `GET https://<GATEWAY_HOST>/v1/wsecho` | `GET /` | Serves the interactive browser test client. |
-| `GET wss://<GATEWAY_HOST>/v1/wsecho/connect` | `GET /connect` | WebSocket upgrade and bidirectional echo endpoint. |
+| `GET https://${APIGEE_HOST}/v1/wsecho` | `GET /` | Serves the interactive browser test client (`Cloud Run WebSocket Echo Tester`). |
+| `GET wss://${APIGEE_HOST}/v1/wsecho/connect` | `GET /connect` | Default WebSocket upgrade and bidirectional echo endpoint. |
+| `GET wss://${APIGEE_HOST}/v1/wsecho/<any-subpath>` | `GET /<any-subpath>` | Custom WebSocket upgrade path (all subpaths are accepted and echoed). |
 
 ### 2. Test WebSocket with Native `curl`
 
 ```bash
 # Plain text echo
 printf "Hello via Gateway!" | curl -k -s -N --max-time 2 -T - \
-  "wss://34.54.8.132.nip.io/v1/wsecho/connect"
+  "wss://${APIGEE_HOST}/v1/wsecho/connect"
 
 # JSON payload echo
 echo '{"status": "ok", "count": 1}' | curl -k -s -N --max-time 2 -T - \
-  "wss://34.54.8.132.nip.io/v1/wsecho/connect"
+  "wss://${APIGEE_HOST}/v1/wsecho/connect"
 ```
 
 ### 3. Test with the CLI Client
 
 ```bash
-cd /usr/local/google/home/joelgauci/repo/cloudrun-websocket-echo
-
 # Standard connection through Apigee
 go run ./cmd/client \
-  -url "wss://34.54.8.132.nip.io/v1/wsecho/connect" \
+  -url "wss://${APIGEE_HOST}/v1/wsecho/connect" \
   -insecure \
   -msg "Hello from CLI client through Apigee!"
 
 # Passing custom headers (-H) through Apigee (e.g. X-Custom-Header or x-blocker)
 go run ./cmd/client \
-  -url "wss://34.54.8.132.nip.io/v1/wsecho/connect" \
+  -url "wss://${APIGEE_HOST}/v1/wsecho/connect" \
   -insecure \
   -H "header_name1: header_value1" \
   -H "header_name2: header_value2" \
   -msg "Hello with custom headers!"
 ```
 
-### 4. Test with `wscat`
-
-```bash
-wscat -c "wss://34.54.8.132.nip.io/v1/wsecho/connect" --no-check
-```
-
-### 5. Interactive Testing in Web Browser
+### 4. Interactive Testing in Web Browser ("Cloud Run WebSocket Echo Tester")
 
 Open the gateway root URL directly in any web browser:
 ```
-https://34.54.8.132.nip.io/v1/wsecho
+https://${APIGEE_HOST}/v1/wsecho
 ```
-Click **Connect**, enter your message in the input box, and click **Send**. The browser connects seamlessly to `wss://34.54.8.132.nip.io/v1/wsecho/connect` and displays echoes with timestamps in real-time.
+- The UI automatically detects the current gateway base path (`/v1/wsecho` or `/v1/echo`).
+- You can customize the **Path after base** field (default: `/connect`, e.g. `/connect`, `/ws`, `/custom/subpath`).
+- Click **Connect**, enter your message in the input box, and click **Send**. The browser connects to `wss://${APIGEE_HOST}/v1/wsecho/<subpath>` and displays echoes with timestamps and the matched path in real-time.
 
 ---
 

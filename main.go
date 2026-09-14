@@ -33,6 +33,7 @@ const (
 // EchoResponse represents the JSON response returned to the WebSocket client.
 type EchoResponse struct {
 	Echo          string      `json:"echo"`
+	Path          string      `json:"path,omitempty"`
 	ReceivedAtUTC string      `json:"received_at_utc"`
 	FormattedTime string      `json:"formatted_time"`
 	Authenticated bool        `json:"authenticated"`
@@ -139,6 +140,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		// Construct the JSON response in English
 		response := EchoResponse{
 			Echo:          rawMessage,
+			Path:          r.URL.Path,
 			ReceivedAtUTC: now.Format(time.RFC3339),
 			FormattedTime: now.Format("Monday, 02-Jan-2006 15:04:05 MST"),
 			Authenticated: hasAuth,
@@ -181,10 +183,11 @@ func handleHealthz(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-// handleIndex serves a lightweight browser-based test client
+// handleIndex serves the browser test client or upgrades any WebSocket request
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+	// Accept WebSocket upgrade requests on any path (e.g. /connect, /ws, /custom/path)
+	if websocket.IsWebSocketUpgrade(r) {
+		handleConnect(w, r)
 		return
 	}
 
@@ -331,9 +334,11 @@ const indexHTML = `<!DOCTYPE html>
 <body>
   <div class="container">
     <h1>Cloud Run WebSocket Echo Tester</h1>
-    <p>Endpoint: <code>GET /connect</code> &bull; Status: <span id="status" class="badge disconnected">Disconnected</span></p>
+    <p>Target URL: <code id="targetUrlPreview">...</code> &bull; Status: <span id="status" class="badge disconnected">Disconnected</span></p>
 
-    <div class="controls">
+    <div class="controls" style="align-items: center;">
+      <label for="wsPathInput" style="font-size: 0.875rem; font-weight: 600; color: #475569; white-space: nowrap;">Path after base:</label>
+      <input type="text" id="wsPathInput" value="/connect" placeholder="/connect" oninput="updateUrlPreview()" />
       <button id="btnConnect" onclick="toggleConnect()">Connect</button>
       <button class="btn-secondary" onclick="clearLog()">Clear Log</button>
     </div>
@@ -353,6 +358,24 @@ const indexHTML = `<!DOCTYPE html>
     const btnConnect = document.getElementById('btnConnect');
     const btnSend = document.getElementById('btnSend');
     const messageInput = document.getElementById('messageInput');
+    const wsPathInput = document.getElementById('wsPathInput');
+    const targetUrlPreview = document.getElementById('targetUrlPreview');
+
+    function computeWsUrl() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const basePath = window.location.pathname.replace(/\/$/, '');
+      let subPath = wsPathInput.value.trim();
+      if (subPath && !subPath.startsWith('/')) {
+        subPath = '/' + subPath;
+      }
+      return protocol + '//' + window.location.host + basePath + subPath;
+    }
+
+    function updateUrlPreview() {
+      targetUrlPreview.textContent = computeWsUrl();
+    }
+
+    updateUrlPreview();
 
     function appendLog(text, className) {
       const line = document.createElement('div');
@@ -372,9 +395,7 @@ const indexHTML = `<!DOCTYPE html>
         return;
       }
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const basePath = window.location.pathname.replace(/\/$/, '');
-      const wsUrl = protocol + '//' + window.location.host + basePath + '/connect';
+      const wsUrl = computeWsUrl();
 
       statusBadge.textContent = 'Connecting...';
       statusBadge.className = 'badge connecting';
@@ -388,6 +409,7 @@ const indexHTML = `<!DOCTYPE html>
         btnConnect.textContent = 'Disconnect';
         btnSend.disabled = false;
         messageInput.disabled = false;
+        wsPathInput.disabled = true;
         messageInput.focus();
         appendLog('WebSocket connection established.', 'entry-info');
       };
@@ -407,6 +429,7 @@ const indexHTML = `<!DOCTYPE html>
         btnConnect.textContent = 'Connect';
         btnSend.disabled = true;
         messageInput.disabled = true;
+        wsPathInput.disabled = false;
         appendLog('WebSocket connection closed.', 'entry-info');
         ws = null;
       };

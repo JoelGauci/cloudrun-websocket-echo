@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Update Apigee Proxy (ws-echo) to route through the Private Service Connect
-# Endpoint Attachment (https://<ENDPOINT_ATTACHMENT_HOST>) to the Regional ILB.
+# Endpoint Attachment (https://<ENDPOINT_ATTACHMENT_HOST>) to the Regional ILB,
+# with a 3600-second (3,600,000 ms) request/WebSocket timeout matching Cloud Run.
 # ==============================================================================
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-apigee-x-jog}"
+PROJECT_ID="${PROJECT_ID:?ERROR: Please export PROJECT_ID (e.g. export PROJECT_ID=your-project-id)}"
+SERVICE_ACCOUNT="${SERVICE_ACCOUNT:?ERROR: Please export SERVICE_ACCOUNT (e.g. export SERVICE_ACCOUNT=my-sa@your-project-id.iam.gserviceaccount.com)}"
+CLOUD_RUN_URL="${CLOUD_RUN_URL:?ERROR: Please export CLOUD_RUN_URL (e.g. export CLOUD_RUN_URL=https://websocket-echo-xxx.a.run.app)}"
 PROXY_NAME="${PROXY_NAME:-ws-echo}"
 ENV_NAME="${ENV_NAME:-prod}"
-SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-crun-apigee@apigee-x-jog.iam.gserviceaccount.com}"
 ENDPOINT_ATTACHMENT_ID="${ENDPOINT_ATTACHMENT_ID:-websocket-echo-ea}"
-CLOUD_RUN_URL="${CLOUD_RUN_URL:-https://websocket-echo-1014194238001.europe-west1.run.app}"
+
+CLOUD_RUN_HOST="${CLOUD_RUN_URL#https://}"
+CLOUD_RUN_HOST="${CLOUD_RUN_HOST%%/*}"
 
 TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null || gcloud auth print-access-token)
 
@@ -31,7 +35,7 @@ mkdir -p "${TMP_DIR}/apiproxy/policies" "${TMP_DIR}/apiproxy/proxies" "${TMP_DIR
 
 cat <<'EOF' > "${TMP_DIR}/apiproxy/ws-echo.xml"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<APIProxy revision="3" name="ws-echo">
+<APIProxy revision="1" name="ws-echo">
   <DisplayName>ws-echo</DisplayName>
   <Description>WebSocket Echo Proxy via Southbound PSC Endpoint Attachment and Regional ILB</Description>
   <ProxyEndpoints>
@@ -62,7 +66,7 @@ cat <<EOF > "${TMP_DIR}/apiproxy/policies/AM-SetTargetHost.xml"
 <AssignMessage continueOnError="false" enabled="true" name="AM-SetTargetHost">
   <Set>
     <Headers>
-      <Header name="Host">websocket-echo-1014194238001.europe-west1.run.app</Header>
+      <Header name="Host">${CLOUD_RUN_HOST}</Header>
     </Headers>
   </Set>
   <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
@@ -86,7 +90,9 @@ cat <<'EOF' > "${TMP_DIR}/apiproxy/proxies/default.xml"
   <Flows/>
   <HTTPProxyConnection>
     <BasePath>/v1/wsecho</BasePath>
-    <Properties/>
+    <Properties>
+      <Property name="io.timeout.millis">3600000</Property>
+    </Properties>
   </HTTPProxyConnection>
   <RouteRule name="default">
     <TargetEndpoint>default</TargetEndpoint>
@@ -124,7 +130,9 @@ cat <<EOF > "${TMP_DIR}/apiproxy/targets/default.xml"
     </Flow>
   </Flows>
   <HTTPTargetConnection>
-    <Properties/>
+    <Properties>
+      <Property name="io.timeout.millis">3600000</Property>
+    </Properties>
     <SSLInfo>
       <Enabled>true</Enabled>
       <IgnoreValidationErrors>true</IgnoreValidationErrors>

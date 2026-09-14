@@ -6,10 +6,10 @@
 # ==============================================================================
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-apigee-x-jog}"
+PROJECT_ID="${PROJECT_ID:?ERROR: Please export PROJECT_ID (e.g. export PROJECT_ID=your-project-id)}"
 REGION="${REGION:-europe-west1}"
-VPC_NETWORK="${VPC_NETWORK:-vpc-customer-apigee-x}"
-SUBNET="${SUBNET:-sub-customer-apigee-x}"
+VPC_NETWORK="${VPC_NETWORK:?ERROR: Please export VPC_NETWORK (e.g. export VPC_NETWORK=your-vpc-network)}"
+SUBNET="${SUBNET:?ERROR: Please export SUBNET (e.g. export SUBNET=your-private-subnet)}"
 PROXY_SUBNET="${PROXY_SUBNET:-proxy-only-subnet-ew1}"
 PSC_NAT_SUBNET="${PSC_NAT_SUBNET:-psc-nat-subnet-ws-echo}"
 CLOUD_RUN_SERVICE="${CLOUD_RUN_SERVICE:-websocket-echo}"
